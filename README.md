@@ -68,6 +68,7 @@ streamlit run app/streamlit_demo.py
 | `causal_summary` | str | Gemini-generated (or fallback template) causal business insight |
 
 ## Team Details
-- **Team Name:** Revenue Rangers
-- **Members:** Kesav P, AI Assistant
+- **Team Name:** CYBER SLAYERS
+- **Members:** Kesav P & Jeffryn Adaikalaraj A
 - **College:** Hackathon Team 2026
+
