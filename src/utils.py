@@ -252,31 +252,69 @@ def normalize_meta(df):
 
 def load_and_unify_all(data_dir):
     """
-    Search for Google, Bing, and Meta files in data_dir, normalize each, and return a unified DataFrame.
+    Search for Google, Bing, and Meta files in data_dir using column structure or filenames,
+    normalize each, and return a unified DataFrame.
     """
-    # 1. Search files
-    google_df, google_path = load_csv_by_pattern(data_dir, "*google*ads*.csv")
-    bing_df, bing_path = load_csv_by_pattern(data_dir, "*bing*.csv")
-    meta_df, meta_path = load_csv_by_pattern(data_dir, "*meta*.csv")
+    search_path = os.path.join(data_dir, "*.csv")
+    csv_files = glob.glob(search_path)
+    if not csv_files:
+        search_path_lower = os.path.join(data_dir, "*.CSV")
+        csv_files = glob.glob(search_path_lower)
+        
+    if not csv_files:
+        raise FileNotFoundError(f"No CSV files found in '{data_dir}'")
+        
+    google_df, google_path = None, None
+    bing_df, bing_path = None, None
+    meta_df, meta_path = None, None
     
+    for file_path in csv_files:
+        try:
+            df = pd.read_csv(file_path)
+            # Remove index column if present
+            if 'Unnamed: 0' in df.columns:
+                df = df.drop(columns=['Unnamed: 0'])
+                
+            # Detect channel
+            channel = None
+            try:
+                channel = detect_channel(df)
+            except ValueError:
+                # Fallback to filename checks
+                filename = os.path.basename(file_path).lower()
+                if 'google' in filename:
+                    channel = 'google'
+                elif 'bing' in filename or 'microsoft' in filename:
+                    channel = 'bing'
+                elif 'meta' in filename or 'facebook' in filename:
+                    channel = 'meta'
+                    
+            if channel == 'google':
+                google_df, google_path = df, file_path
+            elif channel == 'bing':
+                bing_df, bing_path = df, file_path
+            elif channel == 'meta':
+                meta_df, meta_path = df, file_path
+        except Exception as e:
+            print(f"Warning: Skipping file {file_path} due to error: {str(e)}", file=sys.stderr)
+            
+    if google_df is None:
+        raise FileNotFoundError(f"Could not identify a Google Ads file in '{data_dir}' by column headers or filename.")
+    if bing_df is None:
+        raise FileNotFoundError(f"Could not identify a Microsoft/Bing Ads file in '{data_dir}' by column headers or filename.")
+    if meta_df is None:
+        raise FileNotFoundError(f"Could not identify a Meta Ads file in '{data_dir}' by column headers or filename.")
+        
     print(f"Detected Google Ads file: {google_path}")
     print(f"Detected Bing Ads file: {bing_path}")
     print(f"Detected Meta Ads file: {meta_path}")
     
-    # 2. Detect & verify channels
-    if detect_channel(google_df) != 'google':
-        raise ValueError("Google Ads file failed channel detection check")
-    if detect_channel(bing_df) != 'bing':
-        raise ValueError("Bing Ads file failed channel detection check")
-    if detect_channel(meta_df) != 'meta':
-        raise ValueError("Meta Ads file failed channel detection check")
-        
-    # 3. Normalize each DataFrame
+    # Normalize each DataFrame
     google_norm = normalize_google(google_df)
     bing_norm = normalize_bing(bing_df)
     meta_norm = normalize_meta(meta_df)
     
-    # 4. Concatenate and sort
+    # Concatenate and sort
     unified_df = pd.concat([google_norm, bing_norm, meta_norm], ignore_index=True)
     
     # Sort order: date ascending, channel, campaign_type, campaign_name
@@ -285,3 +323,4 @@ def load_and_unify_all(data_dir):
     ).reset_index(drop=True)
     
     return unified_df
+
