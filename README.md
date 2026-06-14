@@ -70,5 +70,6 @@ streamlit run app/streamlit_demo.py
 ## Team Details
 - **Team Name:** CYBER SLAYERS
 - **Members:** Kesav P & Jeffryn Adaikalaraj A
-- **College:** Hackathon Team 2026
+- **College:** Chennai institute of technology
+
 
