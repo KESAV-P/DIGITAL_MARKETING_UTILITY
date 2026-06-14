@@ -15,9 +15,12 @@ fi
 # Detect python interpreter (use local venv if present, otherwise fallback to system python)
 if [ -f "./venv/bin/python" ]; then
   PYTHON_BIN="./venv/bin/python"
+elif command -v python3 &>/dev/null; then
+  PYTHON_BIN="python3"
 else
   PYTHON_BIN="python"
 fi
+
 
 # Run feature generation
 $PYTHON_BIN src/generate_features.py --data-dir "$DATA_DIR" --out features.parquet
