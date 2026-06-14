@@ -1,0 +1,12 @@
+*.pyc
+__pycache__/
+.env
+features.parquet
+*.egg-info
+.DS_Store
+output/*
+!output/.gitkeep
+pickle/*
+!pickle/.gitkeep
+# We want to commit pickle/model.pkl, so we do not ignore it. Let's add an exception for it.
+!pickle/model.pkl
