@@ -14,6 +14,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.pipeline import Pipeline
+from joblib import Parallel, delayed
 
 from llm_insights import generate_causal_summary
 
@@ -114,6 +115,47 @@ def calculate_stats(df, label="Group"):
         "anomaly_flags": anomaly_dates
     }
 
+def train_group(channel, campaign_type, group_df, feature_columns, fallback_rev_pipeline, fallback_roas_pipeline):
+    group_key = f"{channel}__{campaign_type}"
+    group_size = len(group_df)
+    
+    # Calculate group stats
+    stats = calculate_stats(group_df, label=group_key)
+    
+    X_group = group_df[feature_columns]
+    y_rev_group = group_df['revenue']
+    y_roas_group = group_df['roas']
+    
+    if group_size >= 60:
+        # Dedicated pipeline
+        rev_pipe = make_pipeline()
+        roas_pipe = make_pipeline()
+        
+        rev_pipe.fit(X_group, y_rev_group)
+        roas_pipe.fit(X_group, y_roas_group)
+        
+        # Predict and compute in-sample residuals
+        pred_rev = rev_pipe.predict(X_group)
+        pred_roas = roas_pipe.predict(X_group)
+        
+        res_rev = (y_rev_group - pred_rev).tolist()
+        res_roas = (y_roas_group - pred_roas).tolist()
+        is_dedicated = True
+    else:
+        # Fallback pipeline
+        rev_pipe = fallback_rev_pipeline
+        roas_pipe = fallback_roas_pipeline
+        
+        # Compute residuals using fallback pipeline on group's data
+        pred_rev = fallback_rev_pipeline.predict(X_group)
+        pred_roas = fallback_roas_pipeline.predict(X_group)
+        
+        res_rev = (y_rev_group - pred_rev).tolist()
+        res_roas = (y_roas_group - pred_roas).tolist()
+        is_dedicated = False
+        
+    return group_key, rev_pipe, roas_pipe, res_rev, res_roas, stats, is_dedicated
+
 def main():
     parser = argparse.ArgumentParser(description="Model Training for NetElixir-RevForecaster")
     parser.add_argument("--data-dir", default="./data", help="Directory containing raw campaign CSV files")
@@ -170,48 +212,25 @@ def main():
     groups = df.groupby(['channel', 'campaign_type'])
     print(f"Identified {len(groups)} distinct (channel, campaign_type) groups.")
     
-    for (channel, campaign_type), group_df in groups:
-        group_key = f"{channel}__{campaign_type}"
-        group_size = len(group_df)
-        print(f"Processing group '{group_key}' (size: {group_size})...")
-        
-        # Calculate group stats
-        group_stats[group_key] = calculate_stats(group_df, label=group_key)
-        
-        X_group = group_df[feature_columns]
-        y_rev_group = group_df['revenue']
-        y_roas_group = group_df['roas']
-        
-        if group_size >= 60:
-            # Dedicated pipeline
-            rev_pipe = make_pipeline()
-            roas_pipe = make_pipeline()
-            
-            rev_pipe.fit(X_group, y_rev_group)
-            roas_pipe.fit(X_group, y_roas_group)
-            
-            # Predict and compute in-sample residuals
-            pred_rev = rev_pipe.predict(X_group)
-            pred_roas = roas_pipe.predict(X_group)
-            
-            residuals_revenue[group_key] = (y_rev_group - pred_rev).tolist()
-            residuals_roas[group_key] = (y_roas_group - pred_roas).tolist()
-            
-            # Save pipelines
-            revenue_pipelines[group_key] = rev_pipe
-            roas_pipelines[group_key] = roas_pipe
+    # Train groups in parallel using joblib
+    print("Training group-specific models in parallel...")
+    results = Parallel(n_jobs=-1)(
+        delayed(train_group)(
+            channel, campaign_type, group_df, feature_columns, fallback_rev_pipeline, fallback_roas_pipeline
+        )
+        for (channel, campaign_type), group_df in groups
+    )
+    
+    # Collect results
+    for group_key, rev_pipe, roas_pipe, res_rev, res_roas, stats, is_dedicated in results:
+        revenue_pipelines[group_key] = rev_pipe
+        roas_pipelines[group_key] = roas_pipe
+        residuals_revenue[group_key] = res_rev
+        residuals_roas[group_key] = res_roas
+        group_stats[group_key] = stats
+        if is_dedicated:
             print(f"  Trained dedicated pipeline for group '{group_key}'.")
         else:
-            # Fallback pipeline
-            revenue_pipelines[group_key] = fallback_rev_pipeline
-            roas_pipelines[group_key] = fallback_roas_pipeline
-            
-            # Compute residuals using fallback pipeline on group's data
-            pred_rev = fallback_rev_pipeline.predict(X_group)
-            pred_roas = fallback_roas_pipeline.predict(X_group)
-            
-            residuals_revenue[group_key] = (y_rev_group - pred_rev).tolist()
-            residuals_roas[group_key] = (y_roas_group - pred_roas).tolist()
             print(f"  Assigned fallback pipeline for group '{group_key}' (size < 60).")
             
     # Step 6: Generate LLM Causal Summaries (cached)
