@@ -68,7 +68,7 @@ streamlit run app/streamlit_demo.py
 | `causal_summary` | str | Gemini-generated (or fallback template) causal business insight |
 
 ## Team Details
-- **Team Name:** CYBER SLAYERS
+- **Team Name:** pachaikesav
 - **Members:** Kesav P & Jeffryn Adaikalaraj A
 - **College:** Chennai institute of technology
 
